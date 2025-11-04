@@ -28,3 +28,4 @@ functions/lib
 .env
 .env.*
 functions/.env*
+functions/.runtimeconfig.json
