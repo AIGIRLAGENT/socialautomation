@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function matchesOwner(data, field) {
+      return isSignedIn() && data[field] == request.auth.uid;
+    }
+
+    function requestOwnerMatches(field) {
+      return request.resource != null && request.resource.data[field] == request.auth.uid;
+    }
+
+    function userOwnsGroup(groupId) {
+      return isSignedIn()
+        && groupId is string
+        && exists(/databases/$(database)/documents/groups/$(groupId))
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid;
+    }
+
+    match /tweets/{tweetId} {
+      allow read: if resource != null && matchesOwner(resource.data, 'authorUid');
+      allow create: if request.resource != null
+        && requestOwnerMatches('authorUid')
+        && userOwnsGroup(request.resource.data.groupId);
+      allow update: if resource != null
+        && request.resource != null
+        && matchesOwner(resource.data, 'authorUid')
+        && requestOwnerMatches('authorUid')
+        && userOwnsGroup(request.resource.data.groupId);
+      allow delete: if resource != null && matchesOwner(resource.data, 'authorUid');
+    }
+
+    match /groups/{groupId} {
+      allow read: if resource != null && matchesOwner(resource.data, 'ownerUid');
+      allow create: if request.resource != null
+        && requestOwnerMatches('ownerUid')
+        && request.resource.data.name is string;
+      allow update: if resource != null
+        && request.resource != null
+        && matchesOwner(resource.data, 'ownerUid')
+        && requestOwnerMatches('ownerUid');
+      allow delete: if resource != null && matchesOwner(resource.data, 'ownerUid');
+
+      match /socialAccounts/{accountId} {
+        allow list: if userOwnsGroup(groupId);
+        allow get: if resource != null
+          && matchesOwner(resource.data, 'ownerUid')
+          && userOwnsGroup(groupId);
+        allow create: if request.resource != null
+          && userOwnsGroup(groupId)
+          && requestOwnerMatches('ownerUid')
+          && request.resource.data.provider == 'twitter';
+        allow update: if resource != null
+          && request.resource != null
+          && userOwnsGroup(groupId)
+          && matchesOwner(resource.data, 'ownerUid')
+          && requestOwnerMatches('ownerUid');
+        allow delete: if resource != null
+          && userOwnsGroup(groupId)
+          && matchesOwner(resource.data, 'ownerUid');
+      }
+    }
+
+    match /twitterCredentials/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+  }
+}
